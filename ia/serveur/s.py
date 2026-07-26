@@ -1,4 +1,7 @@
 from datetime import datetime
+import os
+import subprocess
+import sys
 from flask import Flask, render_template_string, request, jsonify
 import requests
 
@@ -76,6 +79,10 @@ ADMIN_HTML = """
 @app.route("/", defaults={"path": ""}, methods=["POST", "GET"])
 @app.route("/<path:path>", methods=["POST", "GET"])
 def handle_api(path):
+    # Si GitHub appelle le webhook
+    if path == "webhook":
+        return handle_webhook()
+
     ip = request.remote_addr
 
     if ip in banned_ips:
@@ -149,6 +156,21 @@ def handle_api(path):
             ),
             500,
         )
+
+
+# --- ROUTE DU WEBHOOK DE MISE À JOUR AUTOMATIQUE ---
+def handle_webhook():
+    print("🔄 Nouveau push détecté sur GitHub ! Mise à jour en cours...")
+    try:
+        # Télécharge les nouveaux fichiers depuis GitHub
+        subprocess.run(["git", "pull"], check=True)
+        print("✅ Git pull effectué avec succès. Redémarrage...")
+
+        # Relance le script Python automatiquement
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        print(f"❌ Erreur lors du git pull/redémarrage : {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/admin")
