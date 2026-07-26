@@ -12,7 +12,7 @@ ADMIN_PASSWORD = "secret_hihi"
 
 banned_ips = set()
 logs = []
-
+#le panel admin
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="fr">
