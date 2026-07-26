@@ -1,4 +1,4 @@
-# 🤖 Veyros AI - Serveur Proxy, Panel Admin & Intercepteur
+# 🤖 Veyros AI - Serveur Proxy, Panel Admin & Intercepteur.
 
 Bienvenue dans le dépôt du serveur **Veyros AI**. Ce projet est une infrastructure serveur Python basée sur **Flask** et **Ollama (Llama 3)**, permettant de gérer et de modérer les requêtes d'une application Chatbot via une adresse publique **Ngrok**.
 
