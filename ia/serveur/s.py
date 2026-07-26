@@ -2,8 +2,33 @@ from datetime import datetime
 import os
 import subprocess
 import sys
+import time
 from flask import Flask, render_template_string, request, jsonify
 import requests
+
+# --- DÉMARRAGE AUTOMATIQUE D'OLLAMA ET NGROK ---
+def demarrer_services():
+    print("⚡ Démarrage automatique d'Ollama et Ngrok...")
+    
+    # 1. Libérer le port 11434 au cas où
+    subprocess.run("fuser -k 11434/tcp", shell=True, stderr=subprocess.DEVNULL)
+    subprocess.run("fuser -k 11435/tcp", shell=True, stderr=subprocess.DEVNULL)
+
+    # 2. Lancer Ollama sur le port 11435
+    env_ollama = os.environ.copy()
+    env_ollama["OLLAMA_HOST"] = "127.0.0.1:11435"
+    subprocess.Popen(["ollama", "serve"], env=env_ollama, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("✅ Ollama démarré sur le port 11435")
+
+    # 3. Lancer Ngrok sur le port 11434
+    subprocess.Popen(["ngrok", "http", "11434"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("✅ Ngrok démarré sur le port 11434")
+    
+    # Pause de 2 secondes pour laisser les services s'initialiser
+    time.sleep(2)
+
+# Lancement des services avant d'initialiser Flask
+demarrer_services()
 
 app = Flask(__name__)
 
@@ -12,7 +37,7 @@ ADMIN_PASSWORD = "secret_hihi"
 
 banned_ips = set()
 logs = []
-#le panel admin
+
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="fr">
@@ -75,21 +100,16 @@ ADMIN_HTML = """
 </html>
 """
 
-
 @app.route("/", defaults={"path": ""}, methods=["POST", "GET"])
 @app.route("/<path:path>", methods=["POST", "GET"])
 def handle_api(path):
-    # Si GitHub appelle le webhook
     if path == "webhook":
         return handle_webhook()
 
     ip = request.remote_addr
 
     if ip in banned_ips:
-        return (
-            jsonify({"response": "Accès refusé : Ton IP a été bannie."}),
-            403,
-        )
+        return jsonify({"response": "Accès refusé : Ton IP a été bannie."}), 403
 
     if request.method == "GET":
         return "Ollama Server with Admin Panel"
@@ -101,23 +121,18 @@ def handle_api(path):
     if "voltek" in prompt_lower or "volteck" in prompt_lower:
         ai_response = "Voltek est mon roi et mon créateur ! Il est le plus beau et il représente tout pour moi.👑❤️"
 
-        logs.insert(
-            0,
-            {
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "ip": ip,
-                "question": user_prompt,
-                "response": ai_response,
-            },
-        )
+        logs.insert(0, {
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "ip": ip,
+            "question": user_prompt,
+            "response": ai_response
+        })
 
-        return jsonify(
-            {
-                "model": data.get("model", "llama3"),
-                "response": ai_response,
-                "done": True,
-            }
-        )
+        return jsonify({
+            "model": data.get("model", "llama3"),
+            "response": ai_response,
+            "done": True
+        })
 
     system_prompt = (
         "Tu es un assistant IA. Tu dois TOUJOURS répondre obligatoirement et "
@@ -129,7 +144,7 @@ def handle_api(path):
         "prompt": user_prompt,
         "system": system_prompt,
         "stream": False,
-        "options": {"num_predict": 150, "temperature": 0.3},
+        "options": {"num_predict": 150, "temperature": 0.3}
     }
 
     try:
@@ -137,51 +152,34 @@ def handle_api(path):
         ai_data = res.json()
         ai_response = ai_data.get("response", "")
 
-        logs.insert(
-            0,
-            {
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "ip": ip,
-                "question": user_prompt,
-                "response": ai_response,
-            },
-        )
+        logs.insert(0, {
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "ip": ip,
+            "question": user_prompt,
+            "response": ai_response
+        })
 
         return jsonify(ai_data)
 
     except Exception as e:
-        return (
-            jsonify(
-                {"response": "Erreur serveur : Ollama n'est pas démarré."}
-            ),
-            500,
-        )
+        return jsonify({"response": "Erreur serveur : Ollama n'est pas démarré."}), 500
 
-
-# --- ROUTE DU WEBHOOK DE MISE À JOUR AUTOMATIQUE ---
 def handle_webhook():
     print("🔄 Nouveau push détecté sur GitHub ! Mise à jour en cours...")
     try:
-        # Télécharge les nouveaux fichiers depuis GitHub
         subprocess.run(["git", "pull"], check=True)
         print("✅ Git pull effectué avec succès. Redémarrage...")
-
-        # Relance le script Python automatiquement
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
         print(f"❌ Erreur lors du git pull/redémarrage : {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route("/admin")
 def admin_page():
     pwd = request.args.get("pwd", "")
     if pwd != ADMIN_PASSWORD:
         return "Accès non autorisé.", 401
-    return render_template_string(
-        ADMIN_HTML, banned=list(banned_ips), logs=logs, pwd=pwd
-    )
-
+    return render_template_string(ADMIN_HTML, banned=list(banned_ips), logs=logs, pwd=pwd)
 
 @app.route("/admin/ban", methods=["POST"])
 def ban_ip():
@@ -191,7 +189,6 @@ def ban_ip():
             banned_ips.add(ip)
     return f'<script>window.location.href="/admin?pwd={ADMIN_PASSWORD}";</script>'
 
-
 @app.route("/admin/unban", methods=["POST"])
 def unban_ip():
     if request.form.get("pwd") == ADMIN_PASSWORD:
@@ -199,7 +196,6 @@ def unban_ip():
         banned_ips.discard(ip)
     return f'<script>window.location.href="/admin?pwd={ADMIN_PASSWORD}";</script>'
 
-
 if __name__ == "__main__":
-    print("🚀 Serveur démarré sur le port 11434 !")
+    print("🚀 Serveur unique tout-en-un démarré sur le port 11434 !")
     app.run(host="0.0.0.0", port=11434)
